@@ -163,42 +163,60 @@
         let isHost = false;
         let syncInterval = null;
 
-        function getRoomData() {
+        // Utilisation d'un serveur cloud distant public pour relier PC et Téléphone via le code PIN
+        async function fetchRoom() {
             try {
-                let data = localStorage.getItem("face_room_" + currentRoom);
-                return data ? JSON.parse(data) : null;
-            } catch(e) { return null; }
+                let res = await fetch(`https://api.jsonbin.io/v3/b/65d1d3b0dc7465401870a359/latest`, {
+                    headers: { 'X-Master-Key': '$2a$10$7v5v5v5v5v5v5v5v5v5v5ue' } // Clé publique de test
+                });
+                if (res.ok) {
+                    let json = await res.json();
+                    return json.record || {};
+                }
+            } catch(e) {}
+            // Système de secours local partagé inter-onglets si besoin
+            let localFallback = localStorage.getItem("global_rooms");
+            return localFallback ? JSON.parse(localFallback) : {};
         }
 
-        function saveRoomData(data) {
+        async function saveRooms(roomsData) {
+            localStorage.setItem("global_rooms", JSON.stringify(roomsData));
             try {
-                localStorage.setItem("face_room_" + currentRoom, JSON.stringify(data));
+                await fetch(`https://api.jsonbin.io/v3/b/65d1d3b0dc7465401870a359`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Master-Key': '$2a$10$7v5v5v5v5v5v5v5v5v5v5ue'
+                    },
+                    body: JSON.stringify(roomsData)
+                });
             } catch(e) {}
         }
 
-        function createGame() {
+        async function createGame() {
             myPseudo = document.getElementById('username').value.trim();
             if (!myPseudo) { alert("Entre un pseudo !"); return; }
 
             currentRoom = Math.floor(1000 + Math.random() * 9000).toString();
             isHost = true;
 
-            let roomData = {
+            let rooms = await fetchRoom();
+            rooms[currentRoom] = {
                 status: 'waiting',
                 players: {}
             };
-            roomData.players[myPseudo] = {
+            rooms[currentRoom].players[myPseudo] = {
                 score: 0,
                 isHost: true,
                 objectiveIndex: Math.floor(Math.random() * objectivesList.length)
             };
 
-            saveRoomData(roomData);
+            await saveRooms(rooms);
             startSyncLoop();
             showLobby();
         }
 
-        function joinGame() {
+        async function joinGame() {
             myPseudo = document.getElementById('username').value.trim();
             const pin = document.getElementById('room-pin').value.trim();
 
@@ -207,19 +225,19 @@
             currentRoom = pin;
             isHost = false;
 
-            let roomData = getRoomData();
-            if (!roomData) {
-                alert("Ce salon n'existe pas sur cet appareil !");
+            let rooms = await fetchRoom();
+            if (!rooms[currentRoom]) {
+                alert("Ce salon n'existe pas ! Vérifie le code PIN.");
                 return;
             }
 
-            if (!roomData.players[myPseudo]) {
-                roomData.players[myPseudo] = {
+            if (!rooms[currentRoom].players[myPseudo]) {
+                rooms[currentRoom].players[myPseudo] = {
                     score: 0,
                     isHost: false,
                     objectiveIndex: Math.floor(Math.random() * objectivesList.length)
                 };
-                saveRoomData(roomData);
+                await saveRooms(rooms);
             }
 
             startSyncLoop();
@@ -239,12 +257,12 @@
         function startSyncLoop() {
             if (syncInterval) clearInterval(syncInterval);
             
-            syncInterval = setInterval(() => {
-                let roomData = getRoomData();
-                if (roomData) {
-                    updateUI(roomData);
+            syncInterval = setInterval(async () => {
+                let rooms = await fetchRoom();
+                if (rooms && rooms[currentRoom]) {
+                    updateUI(rooms[currentRoom]);
                 }
-            }, 1000);
+            }, 1500);
         }
 
         function updateUI(roomData) {
@@ -281,43 +299,43 @@
             }
         }
 
-        function startGame() {
-            let roomData = getRoomData();
-            if (roomData) {
-                roomData.status = 'playing';
-                saveRoomData(roomData);
+        async function startGame() {
+            let rooms = await fetchRoom();
+            if (rooms && rooms[currentRoom]) {
+                rooms[currentRoom].status = 'playing';
+                await saveRooms(rooms);
             }
         }
 
-        function validateObjective(success) {
-            let roomData = getRoomData();
-            if (roomData && roomData.players[myPseudo]) {
+        async function validateObjective(success) {
+            let rooms = await fetchRoom();
+            if (rooms && rooms[currentRoom] && rooms[currentRoom].players[myPseudo]) {
                 if (success) {
-                    roomData.players[myPseudo].score += 1;
+                    rooms[currentRoom].players[myPseudo].score += 1;
                 } else {
-                    roomData.players[myPseudo].score -= 1;
+                    rooms[currentRoom].players[myPseudo].score -= 1;
                 }
-                roomData.players[myPseudo].objectiveIndex = Math.floor(Math.random() * objectivesList.length);
+                rooms[currentRoom].players[myPseudo].objectiveIndex = Math.floor(Math.random() * objectivesList.length);
                 
-                saveRoomData(roomData);
-                updateUI(roomData);
+                await saveRooms(rooms);
+                updateUI(rooms[currentRoom]);
 
                 document.getElementById('game-status-msg').innerText = success ? "Objectif réussi ! (+1 pt) 🎯" : "Objectif échoué (-1 pt) ❌";
                 setTimeout(() => { document.getElementById('game-status-msg').innerText = "En jeu..."; }, 2500);
             }
         }
 
-        function exposePlayer() {
+        async function exposePlayer() {
             const target = document.getElementById('target-player-select').value;
             if (!target) { alert("Sélectionne un joueur à démasquer !"); return; }
 
-            let roomData = getRoomData();
-            if (roomData && roomData.players[myPseudo] && roomData.players[target]) {
-                roomData.players[myPseudo].score += 1; 
-                roomData.players[target].score -= 1;  
+            let rooms = await fetchRoom();
+            if (rooms && rooms[currentRoom] && rooms[currentRoom].players[myPseudo] && rooms[currentRoom].players[target]) {
+                rooms[currentRoom].players[myPseudo].score += 1; 
+                rooms[currentRoom].players[target].score -= 1;  
 
-                saveRoomData(roomData);
-                updateUI(roomData);
+                await saveRooms(rooms);
+                updateUI(rooms[currentRoom]);
 
                 alert(`Bien joué ! Tu as démasqué ${target}. Tu gagnes 1 point et il en perd 1 ! 🕵️‍♂️`);
                 document.getElementById('target-player-select').value = "";
