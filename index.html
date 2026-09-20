@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
@@ -138,22 +138,30 @@
         let isHost = false;
         let syncInterval = null;
 
-        // Utilisation de BroadcastChannel + Stockage partagé inter-onglets/appareils via cloud de test public
-        function getRoomData(pin) {
+        // Utilisation de sessionStorage/localStorage couplé à une base de données cloud de test publique via l'API jsonblob
+        async function getCloudRoom(pin) {
             try {
-                return JSON.parse(localStorage.getItem("room_data_" + pin)) || { players: [], status: "waiting" };
-            } catch(e) {
-                return { players: [], status: "waiting" };
-            }
+                let res = await fetch(`https://jsonblob.com/api/jsonBlob/room_${pin}`);
+                if (res.ok) {
+                    return await res.json();
+                }
+            } catch(e) {}
+            // Fallback local si besoin
+            return JSON.parse(localStorage.getItem("room_" + pin)) || null;
         }
 
-        function saveRoomData(pin, data) {
-            localStorage.setItem("room_data_" + pin, JSON.stringify(data));
-            // Déclenche l'événement global pour synchroniser les onglets sur le même appareil
-            localStorage.setItem("sync_trigger_" + pin, Date.now());
+        async function saveCloudRoom(pin, data) {
+            localStorage.setItem("room_" + pin, JSON.stringify(data));
+            try {
+                await fetch(`https://jsonblob.com/api/jsonBlob/room_${pin}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(data)
+                });
+            } catch(e) {}
         }
 
-        function createGame() {
+        async function createGame() {
             myPseudo = document.getElementById('username').value.trim();
             if (!myPseudo) { alert("Entre un pseudo !"); return; }
 
@@ -164,11 +172,12 @@
                 players: [myPseudo + " (Hôte)"],
                 status: "waiting"
             };
-            saveRoomData(currentRoom, roomData);
+
+            await saveCloudRoom(currentRoom, roomData);
             showLobby();
         }
 
-        function joinGame() {
+        async function joinGame() {
             myPseudo = document.getElementById('username').value.trim();
             const pin = document.getElementById('room-pin').value.trim();
 
@@ -177,12 +186,11 @@
             currentRoom = pin;
             isHost = false;
 
-            let roomData = getRoomData(currentRoom);
-            // Vérifie si le salon existe (si y a au moins l'hôte)
-            if (roomData.players.length > 0) {
+            let roomData = await getCloudRoom(currentRoom);
+            if (roomData) {
                 if (!roomData.players.includes(myPseudo)) {
                     roomData.players.push(myPseudo);
-                    saveRoomData(currentRoom, roomData);
+                    await saveCloudRoom(currentRoom, roomData);
                 }
                 showLobby();
             } else {
@@ -199,42 +207,32 @@
                 document.getElementById('start-btn').classList.remove('hidden');
             }
 
-            updateLobbyUI();
+            // Actualisation en boucle toutes les 1.5 secondes pour synchroniser PC et Téléphone
+            syncInterval = setInterval(async () => {
+                let roomData = await getCloudRoom(currentRoom);
+                if (roomData) {
+                    const list = document.getElementById('players-list');
+                    list.innerHTML = '';
+                    roomData.players.forEach(p => {
+                        const li = document.createElement('li');
+                        li.innerText = p;
+                        list.appendChild(li);
+                    });
 
-            // Écoute les mises à jour en temps réel (via le stockage synchronisé)
-            window.addEventListener('storage', (event) => {
-                if (event.key === "room_data_" + currentRoom || event.key === "sync_trigger_" + currentRoom) {
-                    updateLobbyUI();
+                    if (roomData.status === "playing") {
+                        clearInterval(syncInterval);
+                        launchGameScreen();
+                    }
                 }
-            });
-
-            // Double vérification par intervalle régulier pour forcer la synchro du téléphone
-            syncInterval = setInterval(() => {
-                updateLobbyUI();
-            }, 1000);
+            }, 1500);
         }
 
-        function updateLobbyUI() {
-            let roomData = getRoomData(currentRoom);
-            
-            const list = document.getElementById('players-list');
-            list.innerHTML = '';
-            roomData.players.forEach(p => {
-                const li = document.createElement('li');
-                li.innerText = p;
-                list.appendChild(li);
-            });
-
-            if (roomData.status === "playing") {
-                clearInterval(syncInterval);
-                launchGameScreen();
+        async function startGame() {
+            let roomData = await getCloudRoom(currentRoom);
+            if (roomData) {
+                roomData.status = "playing";
+                await saveCloudRoom(currentRoom, roomData);
             }
-        }
-
-        function startGame() {
-            let roomData = getRoomData(currentRoom);
-            roomData.status = "playing";
-            saveRoomData(currentRoom, roomData);
         }
 
         function launchGameScreen() {
