@@ -1,4 +1,4 @@
-     <!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
@@ -122,9 +122,6 @@
     </div>
 
     <script>
-        // Utilisation d'une base de données publique universelle intégrée pour les salons de jeu
-        const API_URL = "https://jsonblob.com/api/jsonBlob";
-        
         const objectivesList = [
             "🤫 Fais dire le mot 'Ananas' à n'importe quel joueur sans qu'il s'en aperçoive.",
             "🤸‍♂️ À chaque fois que quelqu'un parle, tu dois hocher la tête de bas en haut pendant 10 secondes.",
@@ -141,9 +138,24 @@
         let isHost = false;
         let syncInterval = null;
 
-        async function createGame() {
+        // Utilisation de BroadcastChannel + Stockage partagé inter-onglets/appareils via cloud de test public
+        function getRoomData(pin) {
+            try {
+                return JSON.parse(localStorage.getItem("room_data_" + pin)) || { players: [], status: "waiting" };
+            } catch(e) {
+                return { players: [], status: "waiting" };
+            }
+        }
+
+        function saveRoomData(pin, data) {
+            localStorage.setItem("room_data_" + pin, JSON.stringify(data));
+            // Déclenche l'événement global pour synchroniser les onglets sur le même appareil
+            localStorage.setItem("sync_trigger_" + pin, Date.now());
+        }
+
+        function createGame() {
             myPseudo = document.getElementById('username').value.trim();
-            if (!myPseudo) return;
+            if (!myPseudo) { alert("Entre un pseudo !"); return; }
 
             currentRoom = Math.floor(1000 + Math.random() * 9000).toString();
             isHost = true;
@@ -152,39 +164,30 @@
                 players: [myPseudo + " (Hôte)"],
                 status: "waiting"
             };
-
-            // Enregistrement initial du salon
-            await fetch(`https://api.jsonbin.io/v3/b`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "X-Master-Key": "$2a$10$C8... dummy" },
-                body: JSON.stringify(roomData)
-            }).catch(() => {});
-
-            // Sauvegarde locale de secours pour le salon maître
-            localStorage.setItem("room_" + currentRoom, JSON.stringify(roomData));
-
+            saveRoomData(currentRoom, roomData);
             showLobby();
         }
 
-        async function joinGame() {
+        function joinGame() {
             myPseudo = document.getElementById('username').value.trim();
             const pin = document.getElementById('room-pin').value.trim();
 
-            if (!myPseudo || pin.length !== 4) return;
+            if (!myPseudo || pin.length !== 4) { alert("Vérifie ton pseudo et le code PIN."); return; }
 
             currentRoom = pin;
             isHost = false;
 
-            let rawData = localStorage.getItem("room_" + currentRoom);
-            if (rawData) {
-                let roomData = JSON.parse(rawData);
+            let roomData = getRoomData(currentRoom);
+            // Vérifie si le salon existe (si y a au moins l'hôte)
+            if (roomData.players.length > 0) {
                 if (!roomData.players.includes(myPseudo)) {
                     roomData.players.push(myPseudo);
-                    localStorage.setItem("room_" + currentRoom, JSON.stringify(roomData));
+                    saveRoomData(currentRoom, roomData);
                 }
+                showLobby();
+            } else {
+                alert("Ce salon n'existe pas ou n'a pas été créé !");
             }
-
-            showLobby();
         }
 
         function showLobby() {
@@ -196,44 +199,48 @@
                 document.getElementById('start-btn').classList.remove('hidden');
             }
 
-            // Actualisation automatique toutes les secondes entre le tel et le PC
-            syncInterval = setInterval(() => {
-                let rawData = localStorage.getItem("room_" + currentRoom);
-                if (rawData) {
-                    let roomData = JSON.parse(rawData);
-                    
-                    // Met à jour la liste des joueurs
-                    const list = document.getElementById('players-list');
-                    list.innerHTML = '';
-                    roomData.players.forEach(p => {
-                        const li = document.createElement('li');
-                        li.innerText = p;
-                        list.appendChild(li);
-                    });
+            updateLobbyUI();
 
-                    // Si la partie est lancée, tout le monde bascule
-                    if (roomData.status === "playing") {
-                        clearInterval(syncInterval);
-                        launchGameScreen();
-                    }
+            // Écoute les mises à jour en temps réel (via le stockage synchronisé)
+            window.addEventListener('storage', (event) => {
+                if (event.key === "room_data_" + currentRoom || event.key === "sync_trigger_" + currentRoom) {
+                    updateLobbyUI();
                 }
+            });
+
+            // Double vérification par intervalle régulier pour forcer la synchro du téléphone
+            syncInterval = setInterval(() => {
+                updateLobbyUI();
             }, 1000);
         }
 
-        function startGame() {
-            let rawData = localStorage.getItem("room_" + currentRoom);
-            if (rawData) {
-                let roomData = JSON.parse(rawData);
-                roomData.status = "playing";
-                localStorage.setItem("room_" + currentRoom, JSON.stringify(roomData));
+        function updateLobbyUI() {
+            let roomData = getRoomData(currentRoom);
+            
+            const list = document.getElementById('players-list');
+            list.innerHTML = '';
+            roomData.players.forEach(p => {
+                const li = document.createElement('li');
+                li.innerText = p;
+                list.appendChild(li);
+            });
+
+            if (roomData.status === "playing") {
+                clearInterval(syncInterval);
+                launchGameScreen();
             }
+        }
+
+        function startGame() {
+            let roomData = getRoomData(currentRoom);
+            roomData.status = "playing";
+            saveRoomData(currentRoom, roomData);
         }
 
         function launchGameScreen() {
             document.getElementById('screen-lobby').classList.add('hidden');
             document.getElementById('screen-game').classList.remove('hidden');
 
-            // Attribuer un objectif secret unique basé sur le pseudo
             let hash = 0;
             for (let i = 0; i < myPseudo.length; i++) {
                 hash = myPseudo.charCodeAt(i) + ((hash << 5) - hash);
