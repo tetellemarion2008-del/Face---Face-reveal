@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FACE-À-FACE</title>
-    <!-- Importation de Firebase pour la synchro parfaite PC / Téléphone -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -133,8 +130,8 @@
         </div>
         
         <div style="display: flex; gap: 8px;">
-            <button onclick="validateObjective(true)" class="success-btn" style="padding: 10px; font-size: 0.9rem;">Réussi (+1)</button>
-            <button onclick="validateObjective(false)" class="fail-btn" style="padding: 10px; font-size: 0.9rem;">Échoué (-1)</button>
+            <button onclick="validateObjective(true)" class="success-btn" style="padding: 10px; font-size: 0.9rem;">Réussi (+1) 🎯</button>
+            <button onclick="validateObjective(false)" class="fail-btn" style="padding: 10px; font-size: 0.9rem;">Échoué (-1) ❌</button>
         </div>
 
         <!-- Section Démasquer -->
@@ -150,13 +147,6 @@
     </div>
 
     <script>
-        // Configuration Firebase publique open-source pour relier instantanément PC et Téléphone
-        const firebaseConfig = {
-            databaseURL: "https://face-a-face-default-rtdb.europe-west1.firebasedatabase.app/"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
-
         const objectivesList = [
             "🤫 Fais dire le mot 'Ananas' à n'importe quel joueur sans qu'il s'en aperçoive.",
             "🤸‍♂️ À chaque fois que quelqu'un parle, tu dois hocher la tête de bas en haut pendant 10 secondes.",
@@ -171,6 +161,20 @@
         let currentRoom = null;
         let myPseudo = null;
         let isHost = false;
+        let syncInterval = null;
+
+        function getRoomData() {
+            try {
+                let data = localStorage.getItem("face_room_" + currentRoom);
+                return data ? JSON.parse(data) : null;
+            } catch(e) { return null; }
+        }
+
+        function saveRoomData(data) {
+            try {
+                localStorage.setItem("face_room_" + currentRoom, JSON.stringify(data));
+            } catch(e) {}
+        }
 
         function createGame() {
             myPseudo = document.getElementById('username').value.trim();
@@ -179,17 +183,18 @@
             currentRoom = Math.floor(1000 + Math.random() * 9000).toString();
             isHost = true;
 
-            db.ref('rooms/' + currentRoom).set({
+            let roomData = {
                 status: 'waiting',
-                host: myPseudo
-            });
-
-            db.ref(`rooms/${currentRoom}/players/${myPseudo}`).set({
+                players: {}
+            };
+            roomData.players[myPseudo] = {
                 score: 0,
+                isHost: true,
                 objectiveIndex: Math.floor(Math.random() * objectivesList.length)
-            });
+            };
 
-            listenRoom();
+            saveRoomData(roomData);
+            startSyncLoop();
             showLobby();
         }
 
@@ -202,18 +207,23 @@
             currentRoom = pin;
             isHost = false;
 
-            db.ref('rooms/' + currentRoom).once('value', (snapshot) => {
-                if (snapshot.exists()) {
-                    db.ref(`rooms/${currentRoom}/players/${myPseudo}`).set({
-                        score: 0,
-                        objectiveIndex: Math.floor(Math.random() * objectivesList.length)
-                    });
-                    listenRoom();
-                    showLobby();
-                } else {
-                    alert("Ce salon n'existe pas ! Vérifie le code PIN.");
-                }
-            });
+            let roomData = getRoomData();
+            if (!roomData) {
+                alert("Ce salon n'existe pas sur cet appareil !");
+                return;
+            }
+
+            if (!roomData.players[myPseudo]) {
+                roomData.players[myPseudo] = {
+                    score: 0,
+                    isHost: false,
+                    objectiveIndex: Math.floor(Math.random() * objectivesList.length)
+                };
+                saveRoomData(roomData);
+            }
+
+            startSyncLoop();
+            showLobby();
         }
 
         function showLobby() {
@@ -226,94 +236,92 @@
             }
         }
 
-        function listenRoom() {
-            // Écoute en temps réel des joueurs et des scores
-            db.ref('rooms/' + currentRoom + '/players').on('value', (snapshot) => {
-                const list = document.getElementById('players-list');
-                const select = document.getElementById('target-player-select');
-                list.innerHTML = '';
-                select.innerHTML = '<option value="">-- Choisir un joueur --</option>';
-
-                snapshot.forEach((childSnapshot) => {
-                    const playerName = childSnapshot.key;
-                    const playerData = childSnapshot.val();
-
-                    // Liste affichée dans le lobby
-                    const li = document.createElement('li');
-                    li.innerHTML = `<span>${playerName} ${playerName === myPseudo ? '(Moi)' : ''}</span> <span class="score-badge">${playerData.score} pts</span>`;
-                    list.appendChild(li);
-
-                    // Remplir le menu déroulant pour démasquer (s'il ne s'agit pas de soi-même)
-                    if (playerName !== myPseudo) {
-                        const opt = document.createElement('option');
-                        opt.value = playerName;
-                        opt.innerText = playerName;
-                        select.appendChild(opt);
-                    }
-                });
-            });
-
-            // Écoute du lancement de la partie
-            db.ref('rooms/' + currentRoom + '/status').on('value', (snapshot) => {
-                if (snapshot.val() === 'playing') {
-                    document.getElementById('screen-home').classList.add('hidden');
-                    document.getElementById('screen-lobby').classList.add('hidden');
-                    document.getElementById('screen-game').classList.remove('hidden');
-                    loadMyObjective();
+        function startSyncLoop() {
+            if (syncInterval) clearInterval(syncInterval);
+            
+            syncInterval = setInterval(() => {
+                let roomData = getRoomData();
+                if (roomData) {
+                    updateUI(roomData);
                 }
-            });
+            }, 1000);
+        }
+
+        function updateUI(roomData) {
+            const list = document.getElementById('players-list');
+            const select = document.getElementById('target-player-select');
+            list.innerHTML = '';
+            
+            let currentSelected = select.value;
+            select.innerHTML = '<option value="">-- Choisir un joueur --</option>';
+
+            for (let p in roomData.players) {
+                const li = document.createElement('li');
+                li.innerHTML = `<span>${p} ${roomData.players[p].isHost ? '(Hôte)' : ''}</span> <span class="score-badge">${roomData.players[p].score} pts</span>`;
+                list.appendChild(li);
+
+                if (p !== myPseudo) {
+                    const opt = document.createElement('option');
+                    opt.value = p;
+                    opt.innerText = p;
+                    select.appendChild(opt);
+                }
+            }
+            select.value = currentSelected;
+
+            if (roomData.status === 'playing') {
+                document.getElementById('screen-home').classList.add('hidden');
+                document.getElementById('screen-lobby').classList.add('hidden');
+                document.getElementById('screen-game').classList.remove('hidden');
+                
+                if (roomData.players[myPseudo]) {
+                    let idx = roomData.players[myPseudo].objectiveIndex || 0;
+                    document.getElementById('secret-objective').innerText = objectivesList[idx];
+                }
+            }
         }
 
         function startGame() {
-            db.ref('rooms/' + currentRoom + '/status').set('playing');
+            let roomData = getRoomData();
+            if (roomData) {
+                roomData.status = 'playing';
+                saveRoomData(roomData);
+            }
         }
 
-        function loadMyObjective() {
-            db.ref(`rooms/${currentRoom}/players/${myPseudo}/objectiveIndex`).once('value', (snapshot) => {
-                const idx = snapshot.val() || 0;
-                document.getElementById('secret-objective').innerText = objectivesList[idx];
-            });
-        }
-
-        async function validateObjective(success) {
-            const playerRef = db.ref(`rooms/${currentRoom}/players/${myPseudo}`);
-            playerRef.once('value', async (snapshot) => {
-                let data = snapshot.val();
+        function validateObjective(success) {
+            let roomData = getRoomData();
+            if (roomData && roomData.players[myPseudo]) {
                 if (success) {
-                    data.score += 1;
+                    roomData.players[myPseudo].score += 1;
                 } else {
-                    data.score -= 1;
+                    roomData.players[myPseudo].score -= 1;
                 }
-                // Changer d'objectif
-                data.objectiveIndex = Math.floor(Math.random() * objectivesList.length);
+                roomData.players[myPseudo].objectiveIndex = Math.floor(Math.random() * objectivesList.length);
                 
-                await playerRef.set(data);
-                loadMyObjective();
-                
+                saveRoomData(roomData);
+                updateUI(roomData);
+
                 document.getElementById('game-status-msg').innerText = success ? "Objectif réussi ! (+1 pt) 🎯" : "Objectif échoué (-1 pt) ❌";
                 setTimeout(() => { document.getElementById('game-status-msg').innerText = "En jeu..."; }, 2500);
-            });
+            }
         }
 
-        async function exposePlayer() {
+        function exposePlayer() {
             const target = document.getElementById('target-player-select').value;
             if (!target) { alert("Sélectionne un joueur à démasquer !"); return; }
 
-            // Incrémenter mon score et décrémenter celui de la cible
-            const myRef = db.ref(`rooms/${currentRoom}/players/${myPseudo}/score`);
-            const targetRef = db.ref(`rooms/${currentRoom}/players/${target}/score`);
+            let roomData = getRoomData();
+            if (roomData && roomData.players[myPseudo] && roomData.players[target]) {
+                roomData.players[myPseudo].score += 1; 
+                roomData.players[target].score -= 1;  
 
-            await db.ref(`rooms/${currentRoom}/players`).once('value', async (snapshot) => {
-                const players = snapshot.val();
-                let myNewScore = (players[myPseudo].score || 0) + 1;
-                let targetNewScore = (players[target].score || 0) - 1;
-
-                await db.ref(`rooms/${currentRoom}/players/${myPseudo}`).update({ score: myNewScore });
-                await db.ref(`rooms/${currentRoom}/players/${target}`).update({ score: targetNewScore });
+                saveRoomData(roomData);
+                updateUI(roomData);
 
                 alert(`Bien joué ! Tu as démasqué ${target}. Tu gagnes 1 point et il en perd 1 ! 🕵️‍♂️`);
                 document.getElementById('target-player-select').value = "";
-            });
+            }
         }
     </script>
 </body>
