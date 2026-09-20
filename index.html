@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FACE-À-FACE</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            background-color: #0b0f19;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        h1 {
+            color: #ff3366;
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+        .card {
+            background-color: #161b26;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            width: 340px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            border: 1px solid #30363d;
+        }
+        input {
+            background-color: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 12px;
+            color: white;
+            font-size: 1rem;
+            outline: none;
+            text-align: center;
+            width: 100%;
+        }
+        input:focus {
+            border-color: #ff3366;
+        }
+        input::placeholder {
+            color: #8b949e;
+        }
+        button {
+            background-color: #ff3366;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #e02e5b;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        .secondary-btn {
+            background-color: #21262d;
+            border: 1px solid #ff3366;
+        }
+        .secondary-btn:hover {
+            background-color: #30363d;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .objective-box {
+            background-color: #21262d;
+            border: 2px dashed #ff3366;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.1rem;
+            line-height: 1.5;
+            margin-top: 10px;
+            color: #f0f6fc;
+        }
+        .divider {
+            border-top: 1px solid #30363d;
+            margin: 5px 0;
+        }
+        ul {
+            padding-left: 20px;
+            margin: 5px 0;
+            color: #c9d1d9;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        li {
+            padding: 4px 0;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>FACE-À-FACE</h1>
+
+    <!-- ÉCRAN 1 : Accueil / Connexion -->
+    <div id="screen-home" class="card">
+        <input type="text" id="username" placeholder="Ton Pseudo" maxlength="15">
+        <button onclick="createGame()">Créer une partie</button>
+        <div class="divider"></div>
+        <input type="text" id="room-pin" placeholder="Code PIN du salon" maxlength="4">
+        <button onclick="joinGame()" class="secondary-btn">Rejoindre</button>
+    </div>
+
+    <!-- ÉCRAN 2 : Salle d'attente (Lobby) -->
+    <div id="screen-lobby" class="card hidden">
+        <h3 style="margin: 0; text-align: center; color: #8b949e; font-size: 1rem;">Salon PIN : <span id="display-pin" style="color: white; font-size: 1.4rem; letter-spacing: 2px;"></span></h3>
+        <p style="margin: 10px 0 0 0; font-weight: bold; font-size: 0.9rem;">Joueurs connectés :</p>
+        <ul id="players-list"></ul>
+        <button id="start-btn" onclick="startGame()" class="hidden" style="margin-top: 5px;">Lancer la partie</button>
+    </div>
+
+    <!-- ÉCRAN 3 : Le Jeu & Objectif Secret -->
+    <div id="screen-game" class="card hidden">
+        <h3 style="margin: 0; text-align: center; color: #ff3366;">Ton Objectif Secret</h3>
+        <div class="objective-box" id="secret-objective">
+            Chargement de ta mission...
+        </div>
+        <p style="font-size: 0.8rem; color: #8b949e; text-align: center; margin-top: 5px;">Sois discret et accomplis ta mission sans te faire démasquer !</p>
+    </div>
+
+    <script>
+        // Liste des objectifs secrets pour animer la soirée
+        const objectivesList = [
+            "🤫 Fais dire le mot 'Ananas' à n'importe quel joueur sans qu'il s'en aperçoive.",
+            "🤸‍♂️ À chaque fois que quelqu'un parle, tu dois hocher la tête de bas en haut pendant 10 secondes.",
+            "🕵️‍♂️ Glisse le mot 'Complot' dans une phrase normale dans les 2 prochaines minutes.",
+            "🎭 Prends un accent québécois ou belge prononcé pour tes 3 prochaines interventions.",
+            "🤐 Ne réponds plus qu'en faisant des oui/non de la tête pendant 3 tours.",
+            "👑 Appelle obligatoirement ton voisin de gauche 'Votre Altesse' jusqu'à la fin de la manche.",
+            "📱 Fais semblant de recevoir un appel urgent et de parler à ta grand-mère pendant 15 secondes.",
+            "🦅 Finis obligatoirement tes phrases par le mot 'Poulet' pendant 2 tours."
+        ];
+
+        let currentRoom = null;
+        let isHost = false;
+
+        function createGame() {
+            const pseudo = document.getElementById('username').value.trim();
+            if (!pseudo) {
+                document.getElementById('username').style.borderColor = '#ff3366';
+                return;
+            }
+
+            // Génération d'un code PIN à 4 chiffres
+            currentRoom = Math.floor(1000 + Math.random() * 9000);
+            isHost = true;
+
+            // Transition fluide vers le Lobby (sans alertes)
+            document.getElementById('screen-home').classList.add('hidden');
+            document.getElementById('screen-lobby').classList.remove('hidden');
+            document.getElementById('display-pin').innerText = currentRoom;
+            document.getElementById('start-btn').classList.remove('hidden');
+            
+            updatePlayersList(pseudo);
+        }
+
+        function joinGame() {
+            const pseudo = document.getElementById('username').value.trim();
+            const pin = document.getElementById('room-pin').value.trim();
+
+            if (!pseudo || pin.length !== 4) {
+                return;
+            }
+
+            currentRoom = pin;
+            isHost = false;
+
+            // Transition fluide vers le Lobby
+            document.getElementById('screen-home').classList.add('hidden');
+            document.getElementById('screen-lobby').classList.remove('hidden');
+            document.getElementById('display-pin').innerText = currentRoom;
+
+            updatePlayersList(pseudo);
+        }
+
+        function updatePlayersList(pseudo) {
+            const list = document.getElementById('players-list');
+            const li = document.createElement('li');
+            li.innerText = pseudo + (isHost ? " (Hôte)" : "");
+            list.appendChild(li);
+        }
+
+        function startGame() {
+            document.getElementById('screen-lobby').classList.add('hidden');
+            document.getElementById('screen-game').classList.remove('hidden');
+
+            // Attribuer un objectif secret aléatoire propre à l'écran
+            const randomObj = objectivesList[Math.floor(Math.random() * objectivesList.length)];
+            document.getElementById('secret-objective').innerText = randomObj;
+        }
+    </script>
+</body>
+</html>
