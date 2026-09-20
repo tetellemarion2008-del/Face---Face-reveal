@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FACE-À-FACE</title>
+    <!-- Importation de Firebase pour la synchro parfaite PC / Téléphone -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -27,16 +30,16 @@
         }
         .card {
             background-color: #161b26;
-            padding: 30px;
+            padding: 25px;
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-            width: 340px;
+            width: 360px;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
             border: 1px solid #30363d;
         }
-        input {
+        input, select {
             background-color: #21262d;
             border: 1px solid #30363d;
             border-radius: 8px;
@@ -47,7 +50,7 @@
             text-align: center;
             width: 100%;
         }
-        input:focus { border-color: #ff3366; }
+        input:focus, select:focus { border-color: #ff3366; }
         input::placeholder { color: #8b949e; }
         button {
             background-color: #ff3366;
@@ -63,25 +66,30 @@
         }
         button:hover { background-color: #e02e5b; }
         button:active { transform: scale(0.98); }
-        .secondary-btn {
-            background-color: #21262d;
-            border: 1px solid #ff3366;
-        }
+        .secondary-btn { background-color: #21262d; border: 1px solid #ff3366; }
         .secondary-btn:hover { background-color: #30363d; }
         .success-btn { background-color: #2ea043; }
         .success-btn:hover { background-color: #238636; }
-        .skip-btn { background-color: #d73a49; }
-        .skip-btn:hover { background-color: #cb2431; }
+        .fail-btn { background-color: #d73a49; }
+        .fail-btn:hover { background-color: #cb2431; }
+        .mask-section {
+            background-color: #21262d;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
         .hidden { display: none !important; }
         .objective-box {
             background-color: #21262d;
             border: 2px dashed #ff3366;
-            padding: 20px;
+            padding: 15px;
             border-radius: 10px;
             text-align: center;
-            font-size: 1.1rem;
-            line-height: 1.5;
-            margin-top: 10px;
+            font-size: 1rem;
+            line-height: 1.4;
             color: #f0f6fc;
         }
         .divider { border-top: 1px solid #30363d; margin: 5px 0; }
@@ -89,10 +97,10 @@
             padding-left: 20px;
             margin: 5px 0;
             color: #c9d1d9;
-            max-height: 120px;
+            max-height: 100px;
             overflow-y: auto;
         }
-        li { padding: 4px 0; font-size: 0.95rem; display: flex; justify-content: space-between; }
+        li { padding: 3px 0; font-size: 0.9rem; display: flex; justify-content: space-between; }
         .score-badge { color: #2ea043; font-weight: bold; }
     </style>
 </head>
@@ -111,24 +119,44 @@
 
     <!-- ÉCRAN 2 : Salle d'attente (Lobby) -->
     <div id="screen-lobby" class="card hidden">
-        <h3 style="margin: 0; text-align: center; color: #8b949e; font-size: 1rem;">Salon PIN : <span id="display-pin" style="color: white; font-size: 1.4rem; letter-spacing: 2px;"></span></h3>
-        <p style="margin: 10px 0 0 0; font-weight: bold; font-size: 0.9rem;">Joueurs et scores :</p>
+        <h3 style="margin: 0; text-align: center; color: #8b949e; font-size: 1rem;">Salon PIN : <span id="display-pin" style="color: white; font-size: 1.3rem; letter-spacing: 2px;"></span></h3>
+        <p style="margin: 5px 0 0 0; font-weight: bold; font-size: 0.85rem;">Joueurs et scores :</p>
         <ul id="players-list"></ul>
         <button id="start-btn" onclick="startGame()" class="hidden" style="margin-top: 5px;">Lancer la partie</button>
     </div>
 
     <!-- ÉCRAN 3 : Le Jeu & Objectif Secret -->
     <div id="screen-game" class="card hidden">
-        <h3 style="margin: 0; text-align: center; color: #ff3366;">Ton Objectif Secret</h3>
+        <h3 style="margin: 0; text-align: center; color: #ff3366; font-size: 1.1rem;">Ton Objectif Secret</h3>
         <div class="objective-box" id="secret-objective">
-            Chargement de ta mission...
+            Chargement...
         </div>
-        <button onclick="validateObjective(true)" class="success-btn" style="margin-top: 10px;">Réussi ! (+1 pt) 🎯</button>
-        <button onclick="validateObjective(false)" class="skip-btn" style="margin-top: 5px;">Passer / Échoué ❌</button>
-        <p style="font-size: 0.8rem; color: #8b949e; text-align: center; margin-top: 5px;" id="game-status-msg">Jeu en cours...</p>
+        
+        <div style="display: flex; gap: 8px;">
+            <button onclick="validateObjective(true)" class="success-btn" style="padding: 10px; font-size: 0.9rem;">Réussi (+1)</button>
+            <button onclick="validateObjective(false)" class="fail-btn" style="padding: 10px; font-size: 0.9rem;">Échoué (-1)</button>
+        </div>
+
+        <!-- Section Démasquer -->
+        <div class="mask-section">
+            <span style="font-size: 0.85rem; font-weight: bold; color: #ff3366; text-align: center;">J'ai démasqué quelqu'un ! 🕵️‍♂️</span>
+            <select id="target-player-select">
+                <option value="">-- Choisir un joueur --</option>
+            </select>
+            <button onclick="exposePlayer()" class="secondary-btn" style="padding: 8px; font-size: 0.85rem;">Valider le piège (+1 pt / -1 pt)</button>
+        </div>
+
+        <p style="font-size: 0.75rem; color: #8b949e; text-align: center; margin: 0;" id="game-status-msg">En jeu...</p>
     </div>
 
     <script>
+        // Configuration Firebase publique open-source pour relier instantanément PC et Téléphone
+        const firebaseConfig = {
+            databaseURL: "https://face-a-face-default-rtdb.europe-west1.firebasedatabase.app/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
         const objectivesList = [
             "🤫 Fais dire le mot 'Ananas' à n'importe quel joueur sans qu'il s'en aperçoive.",
             "🤸‍♂️ À chaque fois que quelqu'un parle, tu dois hocher la tête de bas en haut pendant 10 secondes.",
@@ -143,40 +171,25 @@
         let currentRoom = null;
         let myPseudo = null;
         let isHost = false;
-        let syncInterval = null;
 
-        // Utilisation d'un stockage global partagé universel via l'API kv.db ou GitHub/localStorage croisé de secours
-        function getRoomData(pin) {
-            try {
-                let data = localStorage.getItem("face_room_" + pin);
-                return data ? JSON.parse(data) : null;
-            } catch(e) {
-                return null;
-            }
-        }
-
-        function saveRoomData(pin, data) {
-            try {
-                localStorage.setItem("face_room_" + pin, JSON.stringify(data));
-                // Envoi synchrone sur une API de relais open-source publique universelle
-                fetch(`https://api.allorigins.win/get?url=` + encodeURIComponent(`https://httpbin.org/anything?pin=${pin}&data=` + JSON.stringify(data))).catch(()=>{});
-            } catch(e) {}
-        }
-
-        async function createGame() {
+        function createGame() {
             myPseudo = document.getElementById('username').value.trim();
             if (!myPseudo) { alert("Entre un pseudo !"); return; }
 
             currentRoom = Math.floor(1000 + Math.random() * 9000).toString();
             isHost = true;
 
-            let roomData = {
-                players: {},
-                status: "waiting"
-            };
-            roomData.players[myPseudo] = { score: 0, isHost: true, objectiveIndex: Math.floor(Math.random() * objectivesList.length) };
+            db.ref('rooms/' + currentRoom).set({
+                status: 'waiting',
+                host: myPseudo
+            });
 
-            saveRoomData(currentRoom, roomData);
+            db.ref(`rooms/${currentRoom}/players/${myPseudo}`).set({
+                score: 0,
+                objectiveIndex: Math.floor(Math.random() * objectivesList.length)
+            });
+
+            listenRoom();
             showLobby();
         }
 
@@ -189,17 +202,18 @@
             currentRoom = pin;
             isHost = false;
 
-            let roomData = getRoomData(currentRoom);
-            if (!roomData) {
-                // Salon de secours simulé pour éviter le blocage si le créateur est sur un autre réseau
-                roomData = { players: {}, status: "waiting" };
-            }
-
-            if (!roomData.players[myPseudo]) {
-                roomData.players[myPseudo] = { score: 0, isHost: false, objectiveIndex: Math.floor(Math.random() * objectivesList.length) };
-                saveRoomData(currentRoom, roomData);
-            }
-            showLobby();
+            db.ref('rooms/' + currentRoom).once('value', (snapshot) => {
+                if (snapshot.exists()) {
+                    db.ref(`rooms/${currentRoom}/players/${myPseudo}`).set({
+                        score: 0,
+                        objectiveIndex: Math.floor(Math.random() * objectivesList.length)
+                    });
+                    listenRoom();
+                    showLobby();
+                } else {
+                    alert("Ce salon n'existe pas ! Vérifie le code PIN.");
+                }
+            });
         }
 
         function showLobby() {
@@ -210,60 +224,96 @@
             if (isHost) {
                 document.getElementById('start-btn').classList.remove('hidden');
             }
-
-            syncInterval = setInterval(() => {
-                let roomData = getRoomData(currentRoom);
-                if (roomData) {
-                    updateLobbyUI(roomData);
-                    if (roomData.status === "playing") {
-                        document.getElementById('screen-lobby').classList.add('hidden');
-                        document.getElementById('screen-game').classList.remove('hidden');
-                        loadMyObjective(roomData);
-                    }
-                }
-            }, 1000);
         }
 
-        function updateLobbyUI(roomData) {
-            const list = document.getElementById('players-list');
-            list.innerHTML = '';
-            for (let p in roomData.players) {
-                const li = document.createElement('li');
-                li.innerHTML = `<span>${p} ${roomData.players[p].isHost ? '(Hôte)' : ''}</span> <span class="score-badge">${roomData.players[p].score} pts</span>`;
-                list.appendChild(li);
-            }
+        function listenRoom() {
+            // Écoute en temps réel des joueurs et des scores
+            db.ref('rooms/' + currentRoom + '/players').on('value', (snapshot) => {
+                const list = document.getElementById('players-list');
+                const select = document.getElementById('target-player-select');
+                list.innerHTML = '';
+                select.innerHTML = '<option value="">-- Choisir un joueur --</option>';
+
+                snapshot.forEach((childSnapshot) => {
+                    const playerName = childSnapshot.key;
+                    const playerData = childSnapshot.val();
+
+                    // Liste affichée dans le lobby
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span>${playerName} ${playerName === myPseudo ? '(Moi)' : ''}</span> <span class="score-badge">${playerData.score} pts</span>`;
+                    list.appendChild(li);
+
+                    // Remplir le menu déroulant pour démasquer (s'il ne s'agit pas de soi-même)
+                    if (playerName !== myPseudo) {
+                        const opt = document.createElement('option');
+                        opt.value = playerName;
+                        opt.innerText = playerName;
+                        select.appendChild(opt);
+                    }
+                });
+            });
+
+            // Écoute du lancement de la partie
+            db.ref('rooms/' + currentRoom + '/status').on('value', (snapshot) => {
+                if (snapshot.val() === 'playing') {
+                    document.getElementById('screen-home').classList.add('hidden');
+                    document.getElementById('screen-lobby').classList.add('hidden');
+                    document.getElementById('screen-game').classList.remove('hidden');
+                    loadMyObjective();
+                }
+            });
         }
 
         function startGame() {
-            let roomData = getRoomData(currentRoom);
-            if (roomData) {
-                roomData.status = "playing";
-                saveRoomData(currentRoom, roomData);
-            }
+            db.ref('rooms/' + currentRoom + '/status').set('playing');
         }
 
-        function loadMyObjective(roomData) {
-            if (roomData && roomData.players[myPseudo]) {
-                let objIdx = roomData.players[myPseudo].objectiveIndex;
-                document.getElementById('secret-objective').innerText = objectivesList[objIdx];
-            }
+        function loadMyObjective() {
+            db.ref(`rooms/${currentRoom}/players/${myPseudo}/objectiveIndex`).once('value', (snapshot) => {
+                const idx = snapshot.val() || 0;
+                document.getElementById('secret-objective').innerText = objectivesList[idx];
+            });
         }
 
-        function validateObjective(success) {
-            let roomData = getRoomData(currentRoom);
-            if (roomData && roomData.players[myPseudo]) {
+        async function validateObjective(success) {
+            const playerRef = db.ref(`rooms/${currentRoom}/players/${myPseudo}`);
+            playerRef.once('value', async (snapshot) => {
+                let data = snapshot.val();
                 if (success) {
-                    roomData.players[myPseudo].score += 1;
+                    data.score += 1;
+                } else {
+                    data.score -= 1;
                 }
-                // Attribuer un nouvel objectif aléatoire
-                roomData.players[myPseudo].objectiveIndex = Math.floor(Math.random() * objectivesList.length);
-                saveRoomData(currentRoom, roomData);
+                // Changer d'objectif
+                data.objectiveIndex = Math.floor(Math.random() * objectivesList.length);
+                
+                await playerRef.set(data);
+                loadMyObjective();
+                
+                document.getElementById('game-status-msg').innerText = success ? "Objectif réussi ! (+1 pt) 🎯" : "Objectif échoué (-1 pt) ❌";
+                setTimeout(() => { document.getElementById('game-status-msg').innerText = "En jeu..."; }, 2500);
+            });
+        }
 
-                // Mettre à jour l'affichage immédiatement sur l'écran
-                loadMyObjective(roomData);
-                document.getElementById('game-status-msg').innerText = success ? "Point validé ! Nouveau défi attribué 🎯" : "Défi passé ! Nouveau défi attribué 🔄";
-                setTimeout(() => { document.getElementById('game-status-msg').innerText = "Jeu en cours..."; }, 3000);
-            }
+        async function exposePlayer() {
+            const target = document.getElementById('target-player-select').value;
+            if (!target) { alert("Sélectionne un joueur à démasquer !"); return; }
+
+            // Incrémenter mon score et décrémenter celui de la cible
+            const myRef = db.ref(`rooms/${currentRoom}/players/${myPseudo}/score`);
+            const targetRef = db.ref(`rooms/${currentRoom}/players/${target}/score`);
+
+            await db.ref(`rooms/${currentRoom}/players`).once('value', async (snapshot) => {
+                const players = snapshot.val();
+                let myNewScore = (players[myPseudo].score || 0) + 1;
+                let targetNewScore = (players[target].score || 0) - 1;
+
+                await db.ref(`rooms/${currentRoom}/players/${myPseudo}`).update({ score: myNewScore });
+                await db.ref(`rooms/${currentRoom}/players/${target}`).update({ score: targetNewScore });
+
+                alert(`Bien joué ! Tu as démasqué ${target}. Tu gagnes 1 point et il en perd 1 ! 🕵️‍♂️`);
+                document.getElementById('target-player-select').value = "";
+            });
         }
     </script>
 </body>
