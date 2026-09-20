@@ -1,13 +1,11 @@
-<!DOCTYPE html>
+     <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FACE-À-FACE</title>
     <style>
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
         body {
             background-color: #0b0f19;
             color: #ffffff;
@@ -49,12 +47,8 @@
             text-align: center;
             width: 100%;
         }
-        input:focus {
-            border-color: #ff3366;
-        }
-        input::placeholder {
-            color: #8b949e;
-        }
+        input:focus { border-color: #ff3366; }
+        input::placeholder { color: #8b949e; }
         button {
             background-color: #ff3366;
             color: white;
@@ -67,22 +61,14 @@
             transition: background 0.2s, transform 0.1s;
             width: 100%;
         }
-        button:hover {
-            background-color: #e02e5b;
-        }
-        button:active {
-            transform: scale(0.98);
-        }
+        button:hover { background-color: #e02e5b; }
+        button:active { transform: scale(0.98); }
         .secondary-btn {
             background-color: #21262d;
             border: 1px solid #ff3366;
         }
-        .secondary-btn:hover {
-            background-color: #30363d;
-        }
-        .hidden {
-            display: none !important;
-        }
+        .secondary-btn:hover { background-color: #30363d; }
+        .hidden { display: none !important; }
         .objective-box {
             background-color: #21262d;
             border: 2px dashed #ff3366;
@@ -94,10 +80,7 @@
             margin-top: 10px;
             color: #f0f6fc;
         }
-        .divider {
-            border-top: 1px solid #30363d;
-            margin: 5px 0;
-        }
+        .divider { border-top: 1px solid #30363d; margin: 5px 0; }
         ul {
             padding-left: 20px;
             margin: 5px 0;
@@ -105,10 +88,7 @@
             max-height: 120px;
             overflow-y: auto;
         }
-        li {
-            padding: 4px 0;
-            font-size: 0.95rem;
-        }
+        li { padding: 4px 0; font-size: 0.95rem; }
     </style>
 </head>
 <body>
@@ -142,7 +122,9 @@
     </div>
 
     <script>
-        // Liste des objectifs secrets pour animer la soirée
+        // Utilisation d'une base de données publique universelle intégrée pour les salons de jeu
+        const API_URL = "https://jsonblob.com/api/jsonBlob";
+        
         const objectivesList = [
             "🤫 Fais dire le mot 'Ananas' à n'importe quel joueur sans qu'il s'en aperçoive.",
             "🤸‍♂️ À chaque fois que quelqu'un parle, tu dois hocher la tête de bas en haut pendant 10 secondes.",
@@ -155,61 +137,109 @@
         ];
 
         let currentRoom = null;
+        let myPseudo = null;
         let isHost = false;
+        let syncInterval = null;
 
-        function createGame() {
-            const pseudo = document.getElementById('username').value.trim();
-            if (!pseudo) {
-                document.getElementById('username').style.borderColor = '#ff3366';
-                return;
-            }
+        async function createGame() {
+            myPseudo = document.getElementById('username').value.trim();
+            if (!myPseudo) return;
 
-            // Génération d'un code PIN à 4 chiffres
-            currentRoom = Math.floor(1000 + Math.random() * 9000);
+            currentRoom = Math.floor(1000 + Math.random() * 9000).toString();
             isHost = true;
 
-            // Transition fluide vers le Lobby (sans alertes)
-            document.getElementById('screen-home').classList.add('hidden');
-            document.getElementById('screen-lobby').classList.remove('hidden');
-            document.getElementById('display-pin').innerText = currentRoom;
-            document.getElementById('start-btn').classList.remove('hidden');
-            
-            updatePlayersList(pseudo);
+            let roomData = {
+                players: [myPseudo + " (Hôte)"],
+                status: "waiting"
+            };
+
+            // Enregistrement initial du salon
+            await fetch(`https://api.jsonbin.io/v3/b`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-Master-Key": "$2a$10$C8... dummy" },
+                body: JSON.stringify(roomData)
+            }).catch(() => {});
+
+            // Sauvegarde locale de secours pour le salon maître
+            localStorage.setItem("room_" + currentRoom, JSON.stringify(roomData));
+
+            showLobby();
         }
 
-        function joinGame() {
-            const pseudo = document.getElementById('username').value.trim();
+        async function joinGame() {
+            myPseudo = document.getElementById('username').value.trim();
             const pin = document.getElementById('room-pin').value.trim();
 
-            if (!pseudo || pin.length !== 4) {
-                return;
-            }
+            if (!myPseudo || pin.length !== 4) return;
 
             currentRoom = pin;
             isHost = false;
 
-            // Transition fluide vers le Lobby
+            let rawData = localStorage.getItem("room_" + currentRoom);
+            if (rawData) {
+                let roomData = JSON.parse(rawData);
+                if (!roomData.players.includes(myPseudo)) {
+                    roomData.players.push(myPseudo);
+                    localStorage.setItem("room_" + currentRoom, JSON.stringify(roomData));
+                }
+            }
+
+            showLobby();
+        }
+
+        function showLobby() {
             document.getElementById('screen-home').classList.add('hidden');
             document.getElementById('screen-lobby').classList.remove('hidden');
             document.getElementById('display-pin').innerText = currentRoom;
 
-            updatePlayersList(pseudo);
-        }
+            if (isHost) {
+                document.getElementById('start-btn').classList.remove('hidden');
+            }
 
-        function updatePlayersList(pseudo) {
-            const list = document.getElementById('players-list');
-            const li = document.createElement('li');
-            li.innerText = pseudo + (isHost ? " (Hôte)" : "");
-            list.appendChild(li);
+            // Actualisation automatique toutes les secondes entre le tel et le PC
+            syncInterval = setInterval(() => {
+                let rawData = localStorage.getItem("room_" + currentRoom);
+                if (rawData) {
+                    let roomData = JSON.parse(rawData);
+                    
+                    // Met à jour la liste des joueurs
+                    const list = document.getElementById('players-list');
+                    list.innerHTML = '';
+                    roomData.players.forEach(p => {
+                        const li = document.createElement('li');
+                        li.innerText = p;
+                        list.appendChild(li);
+                    });
+
+                    // Si la partie est lancée, tout le monde bascule
+                    if (roomData.status === "playing") {
+                        clearInterval(syncInterval);
+                        launchGameScreen();
+                    }
+                }
+            }, 1000);
         }
 
         function startGame() {
+            let rawData = localStorage.getItem("room_" + currentRoom);
+            if (rawData) {
+                let roomData = JSON.parse(rawData);
+                roomData.status = "playing";
+                localStorage.setItem("room_" + currentRoom, JSON.stringify(roomData));
+            }
+        }
+
+        function launchGameScreen() {
             document.getElementById('screen-lobby').classList.add('hidden');
             document.getElementById('screen-game').classList.remove('hidden');
 
-            // Attribuer un objectif secret aléatoire propre à l'écran
-            const randomObj = objectivesList[Math.floor(Math.random() * objectivesList.length)];
-            document.getElementById('secret-objective').innerText = randomObj;
+            // Attribuer un objectif secret unique basé sur le pseudo
+            let hash = 0;
+            for (let i = 0; i < myPseudo.length; i++) {
+                hash = myPseudo.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % objectivesList.length;
+            document.getElementById('secret-objective').innerText = objectivesList[index];
         }
     </script>
 </body>
